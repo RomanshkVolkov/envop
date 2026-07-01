@@ -1,0 +1,5 @@
+/target
+
+# Nunca commitees .env reales (sí puedes versionar plantillas *.env.tpl)
+*.env
+!*.env.tpl
