@@ -74,16 +74,20 @@ fn main() -> Result<()> {
 fn push(args: PushArgs) -> Result<()> {
     let content = fs::read_to_string(&args.file)
         .with_context(|| format!("no se pudo leer {}", args.file.display()))?;
-    let vars = env_parser::parse(&content)?;
-    if vars.is_empty() {
+    let parsed = env_parser::parse(&content)?;
+    if parsed.is_empty() {
         anyhow::bail!("{} no contiene variables", args.file.display());
     }
-    if vars.iter().any(|v| v.value.starts_with("op://")) {
-        anyhow::bail!(
-            "{} ya contiene referencias op:// (¿lo reescribiste con --in-place?). \
-             Usa el .env con los valores reales para subirlo.",
-            args.file.display()
-        );
+
+    // Omite las variables que ya son referencias op:// (avisando), y sigue con las reales.
+    let (vars, skipped): (Vec<_>, Vec<_>) =
+        parsed.into_iter().partition(|v| !v.value.starts_with("op://"));
+    for v in &skipped {
+        eprintln!("[warn] {} ya es una referencia op://; se omite", v.key);
+    }
+    if vars.is_empty() {
+        eprintln!("Todas las variables de {} ya son referencias op://; nada que subir.", args.file.display());
+        return Ok(());
     }
 
     let item = match args.item {
@@ -173,6 +177,12 @@ fn to_references(content: &str, vault: &str, item: &str) -> String {
         };
         match rest.split_once('=') {
             Some((key_raw, val_raw)) => {
+                // Si ya es una referencia op://, deja la línea tal cual.
+                if val_raw.trim_start().starts_with("op://") {
+                    out.push_str(raw);
+                    out.push('\n');
+                    continue;
+                }
                 let key = key_raw.trim();
                 let reference = match &section {
                     Some(s) => format!("op://{vault}/{item}/{s}/{key}"),
@@ -234,6 +244,13 @@ mod tests {
         let got = to_references(src, "Dev", "myproj");
         let want = "# cabecera\nexport API_URL=op://Dev/myproj/API_URL # nota\n\n# [Database]\nDB_HOST=op://Dev/myproj/Database/DB_HOST\n";
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn deja_intactas_las_referencias_existentes() {
+        let src = "A=real\nB=op://Otro/item/B\n";
+        let got = to_references(src, "Dev", "myproj");
+        assert_eq!(got, "A=op://Dev/myproj/A\nB=op://Otro/item/B\n");
     }
 
     #[test]

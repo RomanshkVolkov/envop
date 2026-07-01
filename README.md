@@ -122,8 +122,9 @@ DB_HOST=op://Dev/myproj/Database/DB_HOST
 API_URL=op://Dev/myproj/API_URL
 ```
 
-> `envop` se niega a subir un `.env` que ya contiene referencias `op://`, para no
-> pisar el item con las referencias en vez de los valores reales.
+> Si el `.env` ya contiene alguna referencia `op://` (p. ej. tras `--in-place`),
+> `envop` **omite esas variables** con un aviso por consola y sigue subiendo el resto,
+> para no pisar el item con las referencias en vez de los valores reales.
 
 Consúmela sin materializar secretos en disco:
 
