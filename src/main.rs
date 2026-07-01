@@ -172,13 +172,14 @@ fn to_references(content: &str, vault: &str, item: &str) -> String {
             None => ("", trimmed),
         };
         match rest.split_once('=') {
-            Some((key_raw, _)) => {
+            Some((key_raw, val_raw)) => {
                 let key = key_raw.trim();
                 let reference = match &section {
                     Some(s) => format!("op://{vault}/{item}/{s}/{key}"),
                     None => format!("op://{vault}/{item}/{key}"),
                 };
-                out.push_str(&format!("{indent}{export_prefix}{key}={reference}\n"));
+                let comment = trailing_comment(val_raw);
+                out.push_str(&format!("{indent}{export_prefix}{key}={reference}{comment}\n"));
             }
             None => {
                 out.push_str(raw);
@@ -190,6 +191,39 @@ fn to_references(content: &str, vault: &str, item: &str) -> String {
     out
 }
 
+/// Devuelve el comentario inline que sigue al valor (con su espacio original, p. ej.
+/// ` # nota`), o "" si no hay. Respeta comillas: un `#` dentro de comillas no es comentario.
+fn trailing_comment(val_raw: &str) -> String {
+    let v = val_raw.trim_start();
+
+    if let Some(rest) = v.strip_prefix('"') {
+        let mut chars = rest.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '\\' => {
+                    chars.next(); // salta el carácter escapado
+                }
+                '"' => return rest[i + 1..].to_string(),
+                _ => {}
+            }
+        }
+        return String::new(); // comilla sin cerrar
+    }
+
+    if let Some(rest) = v.strip_prefix('\'') {
+        return match rest.find('\'') {
+            Some(pos) => rest[pos + 1..].to_string(),
+            None => String::new(),
+        };
+    }
+
+    // Sin comillas: el comentario empieza en el primer ` #`.
+    match v.find(" #") {
+        Some(pos) => v[pos..].to_string(),
+        None => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::to_references;
@@ -198,8 +232,16 @@ mod tests {
     fn reescribe_conservando_comentarios_y_secciones() {
         let src = "# cabecera\nexport API_URL=https://x.com # nota\n\n# [Database]\nDB_HOST=localhost\n";
         let got = to_references(src, "Dev", "myproj");
-        let want = "# cabecera\nexport API_URL=op://Dev/myproj/API_URL\n\n# [Database]\nDB_HOST=op://Dev/myproj/Database/DB_HOST\n";
+        let want = "# cabecera\nexport API_URL=op://Dev/myproj/API_URL # nota\n\n# [Database]\nDB_HOST=op://Dev/myproj/Database/DB_HOST\n";
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn preserva_comentario_inline_incluso_con_comillas() {
+        // El `#` dentro de comillas no es comentario; el de fuera sí se conserva.
+        let src = "A=\"val # dentro\" # fuera\nB=plain\n";
+        let got = to_references(src, "V", "I");
+        assert_eq!(got, "A=op://V/I/A # fuera\nB=op://V/I/B\n");
     }
 }
 
