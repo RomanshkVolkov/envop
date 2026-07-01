@@ -14,7 +14,7 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify tag matches Cargo.toml
         run: |
           CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
@@ -38,7 +38,7 @@ jobs:
           - { os: macos-latest,  target: x86_64-apple-darwin,       asset: envop-darwin-amd64 }
           - { os: macos-latest,  target: aarch64-apple-darwin,      asset: envop-darwin-arm64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -71,7 +71,7 @@ jobs:
           cp "$SRC" "dist/${{ matrix.asset }}"
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/${{ matrix.asset }}
           generate_release_notes: true
