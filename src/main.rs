@@ -57,6 +57,11 @@ struct PushArgs {
     /// Escribe una plantilla con referencias op://vault/item/KEY en esta ruta.
     #[arg(long, value_name = "PATH")]
     tpl: Option<PathBuf>,
+
+    /// Reescribe el propio .env reemplazando cada valor por su referencia op://
+    /// (conserva comentarios y marcadores de sección). Solo tras subir con éxito.
+    #[arg(long)]
+    in_place: bool,
 }
 
 fn main() -> Result<()> {
@@ -72,6 +77,13 @@ fn push(args: PushArgs) -> Result<()> {
     let vars = env_parser::parse(&content)?;
     if vars.is_empty() {
         anyhow::bail!("{} no contiene variables", args.file.display());
+    }
+    if vars.iter().any(|v| v.value.starts_with("op://")) {
+        anyhow::bail!(
+            "{} ya contiene referencias op:// (¿lo reescribiste con --in-place?). \
+             Usa el .env con los valores reales para subirlo.",
+            args.file.display()
+        );
     }
 
     let item = match args.item {
@@ -95,6 +107,9 @@ fn push(args: PushArgs) -> Result<()> {
         if let Some(tpl) = &args.tpl {
             println!("[dry-run] escribiría plantilla en {}", tpl.display());
         }
+        if args.in_place {
+            println!("[dry-run] reescribiría {} con referencias op:// (in-place)", args.file.display());
+        }
         return Ok(());
     }
 
@@ -114,7 +129,78 @@ fn push(args: PushArgs) -> Result<()> {
         println!("✓ Plantilla de referencias op:// escrita en {}", tpl_path.display());
     }
 
+    if args.in_place {
+        let rewritten = to_references(&content, &args.vault, &item);
+        fs::write(&args.file, rewritten)
+            .with_context(|| format!("no se pudo reescribir {}", args.file.display()))?;
+        println!("✓ {} reescrito con referencias op://", args.file.display());
+    }
+
     Ok(())
+}
+
+/// Reescribe el contenido de un `.env` reemplazando el valor de cada variable por su
+/// referencia `op://vault/item/[section/]KEY`, conservando líneas en blanco, comentarios
+/// y marcadores de sección `# [Nombre]` para que las secciones sobrevivan a re-ejecuciones.
+fn to_references(content: &str, vault: &str, item: &str) -> String {
+    let mut out = String::new();
+    let mut section: Option<String> = None;
+
+    for raw in content.lines() {
+        let trimmed = raw.trim_start();
+
+        // Comentarios y líneas en blanco se copian tal cual (y actualizan la sección actual).
+        if trimmed.is_empty() {
+            out.push_str(raw);
+            out.push('\n');
+            continue;
+        }
+        if let Some(body) = trimmed.strip_prefix('#') {
+            if let Some(inner) = body.trim().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+                let name = inner.trim();
+                section = if name.is_empty() { None } else { Some(name.to_string()) };
+            }
+            out.push_str(raw);
+            out.push('\n');
+            continue;
+        }
+
+        // Línea de variable: preserva indentación y prefijo `export`, sustituye el valor.
+        let indent = &raw[..raw.len() - trimmed.len()];
+        let (export_prefix, rest) = match trimmed.strip_prefix("export ") {
+            Some(r) => ("export ", r.trim_start()),
+            None => ("", trimmed),
+        };
+        match rest.split_once('=') {
+            Some((key_raw, _)) => {
+                let key = key_raw.trim();
+                let reference = match &section {
+                    Some(s) => format!("op://{vault}/{item}/{s}/{key}"),
+                    None => format!("op://{vault}/{item}/{key}"),
+                };
+                out.push_str(&format!("{indent}{export_prefix}{key}={reference}\n"));
+            }
+            None => {
+                out.push_str(raw);
+                out.push('\n');
+            }
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_references;
+
+    #[test]
+    fn reescribe_conservando_comentarios_y_secciones() {
+        let src = "# cabecera\nexport API_URL=https://x.com # nota\n\n# [Database]\nDB_HOST=localhost\n";
+        let got = to_references(src, "Dev", "myproj");
+        let want = "# cabecera\nexport API_URL=op://Dev/myproj/API_URL\n\n# [Database]\nDB_HOST=op://Dev/myproj/Database/DB_HOST\n";
+        assert_eq!(got, want);
+    }
 }
 
 /// Decide qué cuenta usar. Si el usuario la indicó, la respeta. Si no, consulta

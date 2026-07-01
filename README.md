@@ -55,7 +55,8 @@ envop push <FILE> --vault <VAULT> [--item <ITEM>] [opciones]
 | `-i, --item` | Título del item. Si se omite, se pregunta por consola. |
 | `-a, --account` | Cuenta de 1Password (email, URL, shorthand o account ID). |
 | `-c, --category` | Categoría al crear el item (por defecto `Secure Note`). |
-| `--tpl <PATH>` | Escribe una plantilla `.env` con referencias `op://`. |
+| `--tpl <PATH>` | Escribe una plantilla `.env` con referencias `op://` en **otro** archivo. |
+| `--in-place` | Reescribe el **propio** `.env`: cambia cada valor por su referencia `op://` (conserva comentarios y secciones). |
 | `--dry-run` | Muestra qué haría, con los valores enmascarados. |
 
 ### Ejemplos
@@ -112,12 +113,17 @@ op account list   # ver los identificadores disponibles
 
 ## Plantilla `op://` y consumo sin secretos en disco
 
-Con `--tpl` se genera un `.env` de plantilla donde cada valor es una referencia:
+Con `--tpl` se genera un `.env` de plantilla (en otro archivo) donde cada valor es una
+referencia. Con `--in-place` se reescribe el propio `.env` (conservando comentarios y
+marcadores `# [Sección]`). En ambos casos:
 
 ```dotenv
 DB_HOST=op://Dev/myproj/Database/DB_HOST
 API_URL=op://Dev/myproj/API_URL
 ```
+
+> `envop` se niega a subir un `.env` que ya contiene referencias `op://`, para no
+> pisar el item con las referencias en vez de los valores reales.
 
 Consúmela sin materializar secretos en disco:
 
