@@ -1,6 +1,6 @@
 [package]
 name = "envop"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Sube variables de un archivo .env a un item de 1Password (op CLI), un campo por variable, con upsert y generación de referencias op://"
 license = "MIT"
